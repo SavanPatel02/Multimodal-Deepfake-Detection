@@ -1,12 +1,17 @@
 import os
+import sys
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from logger_setup import setup_logger
 from multimodal_dataset import MultimodalDataset
 from multimodal_model import MultimodalDeepfakeModel
+
+log = setup_logger("train")
 
 # ==========================
 # CONFIG
@@ -15,44 +20,66 @@ from multimodal_model import MultimodalDeepfakeModel
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 BATCH_SIZE = 4
-EPOCHS = 15   
-LR = 5e-5     
+EPOCHS = 15
+LR = 5e-5
+GRAD_CLIP = 1.0          # FIX: gradient clipping max norm
+EARLY_STOP_PATIENCE = 4  # FIX: stop if val acc doesn't improve for N epochs
+NUM_WORKERS = 4          # FIX: parallel data loading (was 0)
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-
-print("Using device:", DEVICE)
+log.info(f"Using device: {DEVICE}")
 
 # ==========================
-# DATASETS (UPDATED)
+# DATASETS
 # ==========================
 
 train_dataset = MultimodalDataset(
     csv_file=os.path.join(BASE_DIR, "Data/processed/train_subset.csv"),
     frames_root=os.path.join(BASE_DIR, "Data/processed/frames/train"),
     mel_root=os.path.join(BASE_DIR, "Data/processed/mels/train"),
-    split="train"   # 🔥 IMPORTANT
+    split="train"
 )
 
 dev_dataset = MultimodalDataset(
     csv_file=os.path.join(BASE_DIR, "Data/processed/dev_subset.csv"),
     frames_root=os.path.join(BASE_DIR, "Data/processed/frames/dev"),
     mel_root=os.path.join(BASE_DIR, "Data/processed/mels/dev"),
-    split="dev"    
+    split="dev"
 )
 
 train_loader = DataLoader(
     train_dataset,
     batch_size=BATCH_SIZE,
     shuffle=True,
-    num_workers=0
+    num_workers=NUM_WORKERS,
+    pin_memory=True if DEVICE == "cuda" else False
 )
 
 dev_loader = DataLoader(
     dev_dataset,
     batch_size=BATCH_SIZE,
     shuffle=False,
-    num_workers=0
+    num_workers=NUM_WORKERS,
+    pin_memory=True if DEVICE == "cuda" else False
 )
+
+# ==========================
+# CLASS WEIGHTS
+# FIX: compute weights from training labels to handle class imbalance
+# ==========================
+
+import pandas as pd
+import numpy as np
+
+train_df = pd.read_csv(os.path.join(BASE_DIR, "Data/processed/train_subset.csv"))
+class_counts = train_df["label"].value_counts().sort_index().values  # [count_real, count_fake]
+class_weights = torch.tensor(
+    1.0 / class_counts.astype(np.float32),
+    dtype=torch.float32
+).to(DEVICE)
+class_weights = class_weights / class_weights.sum()  # normalize
+
+log.info(f"Class weights → Real: {class_weights[0]:.4f}, Fake: {class_weights[1]:.4f}")
 
 # ==========================
 # MODEL
@@ -60,8 +87,11 @@ dev_loader = DataLoader(
 
 model = MultimodalDeepfakeModel().to(DEVICE)
 
-criterion = nn.CrossEntropyLoss()
+criterion = nn.CrossEntropyLoss(weight=class_weights)  # FIX: weighted loss
 optimizer = optim.Adam(model.parameters(), lr=LR)
+
+# FIX: cosine annealing LR scheduler
+scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
 
 # ==========================
 # TRAINING FUNCTION
@@ -84,6 +114,10 @@ def train_one_epoch():
         loss = criterion(outputs, labels)
 
         loss.backward()
+
+        # FIX: gradient clipping before optimizer step
+        torch.nn.utils.clip_grad_norm_(model.parameters(), GRAD_CLIP)
+
         optimizer.step()
 
         running_loss += loss.item()
@@ -127,23 +161,40 @@ def validate():
 
 # ==========================
 # MAIN TRAIN LOOP
+# FIX: wrapped in __main__ guard — required on Windows with num_workers > 0
+#      (without this, each worker process re-imports the module and
+#       spawns more workers, causing an infinite process explosion)
 # ==========================
 
-best_val_acc = 0  
+if __name__ == "__main__":
 
-for epoch in range(EPOCHS):
+    best_val_acc = 0
+    epochs_no_improve = 0
 
-    print(f"\nEpoch [{epoch+1}/{EPOCHS}]")
+    for epoch in range(EPOCHS):
 
-    train_loss, train_acc = train_one_epoch()
-    val_loss, val_acc = validate()
+        log.info(f"\nEpoch [{epoch+1}/{EPOCHS}]  LR: {scheduler.get_last_lr()[0]:.2e}")
 
-    print(f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}%")
-    print(f"Val   Loss: {val_loss:.4f} | Val   Acc: {val_acc:.2f}%")
+        train_loss, train_acc = train_one_epoch()
+        val_loss, val_acc = validate()
 
-    if val_acc > best_val_acc:
-        best_val_acc = val_acc
-        torch.save(model.state_dict(), os.path.join(BASE_DIR, "multimodal_model.pth"))
-        print("Best model saved!")
+        # Step scheduler after each epoch
+        scheduler.step()
 
-print("\nTraining completed.")
+        log.info(f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}%")
+        log.info(f"Val   Loss: {val_loss:.4f} | Val   Acc: {val_acc:.2f}%")
+
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            epochs_no_improve = 0
+            torch.save(model.state_dict(), os.path.join(BASE_DIR, "multimodal_model.pth"))
+            log.info("Best model saved!")
+        else:
+            epochs_no_improve += 1
+            log.info(f"No improvement for {epochs_no_improve}/{EARLY_STOP_PATIENCE} epochs.")
+
+        if epochs_no_improve >= EARLY_STOP_PATIENCE:
+            log.info(f"\nEarly stopping triggered at epoch {epoch+1}.")
+            break
+
+    log.info("\nTraining completed.")

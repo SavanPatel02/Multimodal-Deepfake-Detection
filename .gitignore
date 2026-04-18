@@ -62,3 +62,17 @@ Data/
 
 # Notebook checkpoints
 .ipynb_checkpoints/
+
+# Word/Office documents (large binary reports)
+*.docx
+*.doc
+*.xlsx
+*.pptx
+
+# Training logs and runtime output
+codeoptimization/logs/
+performance.txt
+time.txt
+
+# Mel spectrograms (generated data artifacts)
+*.npy
