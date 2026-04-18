@@ -1,0 +1,49 @@
+{
+  "model": "M10",
+  "parameters": 101506,
+  "best_val_acc": 73.24,
+  "best_val_f1": 0.8138,
+  "epochs_run": 5,
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 0.6737,
+      "train_acc": 59.45,
+      "val_loss": 0.6526,
+      "val_acc": 61.7,
+      "val_f1": 0.695
+    },
+    {
+      "epoch": 2,
+      "train_loss": 0.6426,
+      "train_acc": 65.49,
+      "val_loss": 0.6185,
+      "val_acc": 73.24,
+      "val_f1": 0.8138
+    },
+    {
+      "epoch": 3,
+      "train_loss": 0.6109,
+      "train_acc": 68.39,
+      "val_loss": 0.5856,
+      "val_acc": 71.98,
+      "val_f1": 0.7902
+    },
+    {
+      "epoch": 4,
+      "train_loss": 0.5893,
+      "train_acc": 68.97,
+      "val_loss": 0.5676,
+      "val_acc": 72.52,
+      "val_f1": 0.7968
+    },
+    {
+      "epoch": 5,
+      "train_loss": 0.5743,
+      "train_acc": 69.95,
+      "val_loss": 0.5508,
+      "val_acc": 70.02,
+      "val_f1": 0.762
+    }
+  ]
+}
