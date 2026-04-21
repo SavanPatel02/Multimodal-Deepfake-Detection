@@ -303,9 +303,9 @@ pip install -r requirements.txt
 
 | Split | Subset used | Full dataset |
 |-------|-------------|--------------|
-| Train | 10,000 (5k real / 5k fake) | 78,703 (73% fake) |
-| Dev | 2,000 (1k real / 1k fake) | 31,501 (74% fake) |
-| Test | 2,000 (1k real / 1k fake) | 26,100 (74% fake) |
+| Train | 25,000  | 78,703 (73% fake) |
+| Dev | 5,000  | 31,501 (74% fake) |
+| Test | 2,000  | 26,100 (74% fake) |
 
 Class imbalance in the full dataset is handled with weighted CrossEntropyLoss.
 
@@ -313,5 +313,4 @@ Class imbalance in the full dataset is handled with weighted CrossEntropyLoss.
 
 ## Author
 
-**Savan Patel** — 25MDS013  
-School of Technology, PDPU
+**Savan Patel** 
