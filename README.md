@@ -314,3 +314,4 @@ Class imbalance in the full dataset is handled with weighted CrossEntropyLoss.
 ## Author
 
 **Savan Patel** 
+**savanpatel0208@gmail.com**
